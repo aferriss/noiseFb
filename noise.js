@@ -91,7 +91,7 @@ function render(){
 
 	
 	//blurHShader.needsUpdate = true;
-	//blurVShader.needsUpdate = true;
+	blurVShader.needsUpdate = true;
 
 	blurHShader.uniforms.u_image.value = blurVRtt;
 
