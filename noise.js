@@ -2,46 +2,39 @@ var w = window.innerWidth;
 var h = window.innerHeight;
 
 var scene, renderer, camera, plane, tex;
-var blurHScene, blurVScene, noiseRTT, blurHRtt, blurVRtt;
-var blurHShader, blurVShader;
-var sizeX = w;
-var sizeY = h;
-
+var blurHScene, blurVScene, advanceScene, diffScene;
+var noiseRTT, blurHRtt, blurVRtt, advanceRtt, prev;
+var blurHShader, blurVShader, advanceShader, diffShader, baseShader;
+var sizeX = 2048;
+var sizeY = 2048;
+var time = 0;
+var container = document.getElementById('container');
+var mouseX = 0.5;
+var mouseY = 0.5;
+var it = 1;
 init();
+
+document.onmousemove = function(evt) {
+		mouseX = evt.offsetX / w;
+		mouseY = 1 - evt.offsetY / h;
+};
 
 function init(){
 
 	scene = new THREE.Scene();
 	blurHScene = new THREE.Scene();
 	blurVScene = new THREE.Scene();
+	advanceScene = new THREE.Scene();
+	diffScene = new THREE.Scene();
 
 	camera = new THREE.OrthographicCamera( w/-2, w/2, h/2, h/-2, -10000, 10000);
 
 	scene.add(camera);
 	blurHScene.add(camera);
 	blurVScene.add(camera);
+	advanceScene.add(camera);
+	diffScene.add(camera);
 
-	noiseRTT = new THREE.WebGLRenderTarget(w, h, {minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat });
-	blurHRtt = new THREE.WebGLRenderTarget(w, h, {minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat });
-	blurVRtt = new THREE.WebGLRenderTarget(w, h, {minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat });
-
-	blurHShader = new THREE.ShaderMaterial({
-		uniforms:{
-			u_image: { type:'t', value: noiseRTT },
-			pixelSize: { type: 'v2', value: new THREE.Vector2(1.0/sizeX, 1.0/sizeY) }
-		},
-		vertexShader: document.getElementById('vertexShader').textContent,
-		fragmentShader: document.getElementById('blurH').textContent
-	});
-
-	blurVShader = new THREE.ShaderMaterial({
-		uniforms:{
-			u_image: { type:'t', value: blurHRtt },
-			pixelSize: { type: 'v2', value: new THREE.Vector2(1.0/sizeX, 1.0/sizeY) }
-		},
-		vertexShader: document.getElementById('vertexShader').textContent,
-		fragmentShader: document.getElementById('blurV').textContent
-	});
 
 	var noisepixels = [];
 	var pixels = [];
@@ -54,14 +47,76 @@ function init(){
 
 	var pixelData = new Uint8Array(noisepixels);
 	tex = new THREE.DataTexture( pixelData, sizeX, sizeY, THREE.RGBAFormat);
-	tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-	tex.minFilter = THREE.LinearFilter;
+	tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+	tex.minFilter = THREE.NearestFilter;
 	tex.needsUpdate = true;
 
-	var planeGeo = new THREE.PlaneBufferGeometry(sizeX, sizeY);
+
+	noiseRTT = new THREE.WebGLRenderTarget(sizeX, sizeY, {minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat });
+	blurHRtt = new THREE.WebGLRenderTarget(sizeX, sizeY, {minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat });
+	blurVRtt = new THREE.WebGLRenderTarget(sizeX, sizeY, {minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat });
+	advanceRtt = new THREE.WebGLRenderTarget(sizeX, sizeY, {minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat });
+	prev = new THREE.WebGLRenderTarget(sizeX, sizeY, {minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat });
+
+	noiseRTT.wrapS = noiseRTT.wrapT = THREE.RepeatWrapping;
+	blurHRtt.wrapS = blurHRtt.wrapT = THREE.RepeatWrapping;
+	blurVRtt.wrapS = blurVRtt.wrapT = THREE.RepeatWrapping;
+	advanceRtt.wrapS = advanceRtt.wrapT = THREE.RepeatWrapping;
+	prev.wrapS = prev.wrapT = THREE.RepeatWrapping;
+
+	blurHShader = new THREE.ShaderMaterial({
+		uniforms:{
+			u_image: { type:'t', value: tex },
+			pixelSize: { type: 'v2', value: new THREE.Vector2(1.0/sizeX, 1.0/sizeY) }
+		},
+		vertexShader: document.getElementById('vertexShader').textContent,
+		fragmentShader: document.getElementById('blurV').textContent
+	});
+
+	blurVShader = new THREE.ShaderMaterial({
+		uniforms:{
+			u_image: { type:'t', value: blurHRtt },
+			pixelSize: { type: 'v2', value: new THREE.Vector2(1.0/sizeX, 1.0/sizeY) }
+		},
+		vertexShader: document.getElementById('vertexShader').textContent,
+		fragmentShader: document.getElementById('blurH').textContent
+	});
+
+	advanceShader = new THREE.ShaderMaterial({
+		uniforms:{
+			sampler_prev: { type:'t', value: prev },
+			sampler_blur: { type:'t', value: blurVRtt },
+			sampler_noise: { type:'t', value: tex },
+			pixelSize: { type: 'v2', value: new THREE.Vector2(1.0/w, 1.0/h) },
+			mouse: { type: 'v2', value: new THREE.Vector2(mouseX, mouseY) },
+			rnd: { type: 'v4', value: new THREE.Vector4( Math.random(), Math.random(), Math.random(), Math.random() )},
+		},
+		vertexShader: document.getElementById('vertexShader').textContent,
+		fragmentShader: document.getElementById('advanceFs').textContent
+	});
+
+
+	diffShader = new THREE.ShaderMaterial({
+		uniforms:{
+			curr:{ type: 't', value: prev },
+			prev: {type: 't', value: advanceRtt }
+		},
+		vertexShader: document.getElementById('vertexShader').textContent,
+		fragmentShader: document.getElementById('diffShader').textContent
+	});
+
+	baseShader = new THREE.ShaderMaterial({
+		uniforms:{
+			tex:{ type: 't', value: blurVRtt }
+		},
+		vertexShader: document.getElementById('vertexShader').textContent,
+		fragmentShader: document.getElementById('fragmentShader').textContent
+	});
+
+	var planeGeo = new THREE.PlaneBufferGeometry(w, h);
 	var planeMat = new THREE.MeshBasicMaterial({map: tex});
 	
-	plane = new THREE.Mesh(planeGeo, planeMat);
+	plane = new THREE.Mesh(planeGeo, baseShader);
 	scene.add(plane);
 
 	plane = new THREE.Mesh(planeGeo, blurHShader);
@@ -70,9 +125,15 @@ function init(){
 	plane = new THREE.Mesh(planeGeo, blurVShader);
 	blurVScene.add(plane);
 
-	renderer = new THREE.WebGLRenderer({ antialias:true});
+	plane = new THREE.Mesh(planeGeo, advanceShader);
+	advanceScene.add(plane);
 
-  	renderer.setSize(w, h);
+	plane = new THREE.Mesh(planeGeo, diffShader);
+	diffScene.add(plane);
+
+	renderer = new THREE.WebGLRenderer({ antialias:false});
+
+  	renderer.setSize(w,h);
 
   	container.appendChild(renderer.domElement);
 
@@ -82,20 +143,51 @@ function init(){
 
 
 function render(){
+	//time += 0.01;
 
-	renderer.render(scene, camera, noiseRTT, true);
+	advanceShader.uniforms.mouse.value = new THREE.Vector2(mouseX, mouseY);
+	advanceShader.uniforms.rnd.value = new THREE.Vector4(Math.random(), Math.random(),Math.random(),Math.random());
+
+	if(it > 0 ){
+		noiseRTT.minFilter = noiseRTT.magFilter = THREE.LinearFilter;
+		blurHRtt.minFilter = blurHRtt.magFilter = THREE.LinearFilter;
+		blurVRtt.minFilter = blurVRtt.magFilter = THREE.LinearFilter;
+		prev.minFilter = prev.magFilter = THREE.NearestFilter;
+		advanceRtt.minFilter = advanceRtt.magFilter = THREE.NearestFilter;
+	} else {
+		noiseRTT.minFilter = noiseRTT.magFilter = THREE.NearestFilter;
+		blurHRtt.minFilter = blurHRtt.magFilter = THREE.NearestFilter;
+		blurVRtt.minFilter = blurVRtt.magFilter = THREE.NearestFilter;
+		prev.minFilter = prev.magFilter = THREE.NearestFilter;
+		advanceRtt.minFilter = advanceRtt.magFilter = THREE.NearestFilter;
+	}
+
+	
+
 	renderer.render(blurHScene, camera, blurHRtt, true);
 	renderer.render(blurVScene, camera, blurVRtt, true);
 
-	renderer.render(blurVScene, camera);
+	
+
+	renderer.render(advanceScene, camera, advanceRtt, true);	
+	
+	renderer.render(scene, camera, prev, true);
+	renderer.render(advanceScene, camera);
+
+	//renderer.render(diffScene, camera);
 
 	
-	//blurHShader.needsUpdate = true;
-	blurVShader.needsUpdate = true;
+	
+	blurHShader.uniforms.u_image.value = advanceRtt;
+	
+	
+	//diffShader.uniforms.curr.value = advanceRtt;
+	//diffShader.uniforms.prev.value = advanceRtt;
 
-	blurHShader.uniforms.u_image.value = blurVRtt;
 
-	window.requestAnimationFrame(render);
+	//it = -it;
+
+		window.requestAnimationFrame(render);
 }
 
 

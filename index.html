@@ -27,6 +27,7 @@
 		varying vec2 vUv;
 		uniform vec2 pixelSize;
 		void main() {
+			
 			float h = pixelSize.x;
 			vec4 sum = vec4(0.0);
 			sum += texture2D(u_image, vec2(vUv.x - 4.0*h, vUv.y) ) * 0.05;
@@ -40,6 +41,8 @@
 			sum += texture2D(u_image, vec2(vUv.x + 4.0*h, vUv.y) ) * 0.05;
 		    gl_FragColor.xyz = sum.xyz/0.98; // normalize
 			gl_FragColor.a = 1.;
+			
+			//gl_FragColor = texture2D(u_image, vUv);
 		} 
 		</script>
 
@@ -63,6 +66,53 @@
 			sum += texture2D(u_image, vec2(vUv.x, + 4.0*v + vUv.y) ) * 0.05;
 		    gl_FragColor.xyz = sum.xyz/0.98;
 			gl_FragColor.a = 1.;
+		}
+	</script>
+
+	<script id="advanceFs" type="x-shader/x-fragment"> 
+
+		uniform sampler2D sampler_prev;
+		uniform sampler2D sampler_blur;
+		uniform sampler2D sampler_noise;
+
+		varying vec2 vUv;
+		uniform vec2 pixelSize;
+		uniform vec4 rnd;
+		uniform vec2 mouse;
+
+		void main() {
+			vec2 zoom_in = mouse + (vUv-mouse)*0.96;
+			vec4 rand_noise = texture2D(sampler_noise, zoom_in + vec2(rnd.x, rnd.y));
+			zoom_in += (rand_noise.yz-0.5)*pixelSize*1.; // error-diffusion
+			gl_FragColor = texture2D(sampler_prev, zoom_in) + (rand_noise-0.5)*0.12;
+			gl_FragColor -= ( texture2D(sampler_blur, zoom_in)- texture2D(sampler_prev, zoom_in))*0.24; // reaction-diffusion
+
+			gl_FragColor.a = 1.;
+
+			//gl_FragColor = texture2D(sampler_blur, zoom_in);
+		}
+	</script>
+
+	<script id="fragmentShader" type="x-shader/x-fragment">
+
+		uniform sampler2D tex;
+		
+		varying vec2 vUv;
+
+		void main(){
+			gl_FragColor = texture2D(tex, vUv);
+		}
+	</script>
+
+
+	<script id="diffShader" type="x-shader/x-fragment">
+
+		uniform sampler2D curr;
+		uniform sampler2D prev;
+		varying vec2 vUv;
+
+		void main(){
+			gl_FragColor = texture2D(prev, vUv);
 		}
 	</script>
 
